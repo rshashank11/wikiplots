@@ -1,0 +1,6 @@
+services:
+  loader:
+    build: .
+    env_file: .env
+    volumes:
+      - ./data:/app/data
