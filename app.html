@@ -47,6 +47,8 @@
                 <p class="text-gray-500 font-bold tracking-wide animate-pulse">Running Vector Math...</p>
             </div>
 
+            <p id="searchTimer" class="hidden text-sm text-gray-400 mb-4">Searched in <span id="searchTime" class="font-bold text-indigo-600"></span> seconds</p>
+
             <div id="bestMatchContainer" class="hidden mb-8">
                 <h3 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-2">Top Match</h3>
                 <div class="bg-white rounded-2xl shadow-lg border border-indigo-100 overflow-hidden">
@@ -130,6 +132,7 @@
 
             document.getElementById('bestMatchContainer').classList.add('hidden');
             document.getElementById('similarBooksContainer').classList.add('hidden');
+            document.getElementById('searchTimer').classList.add('hidden');
             document.getElementById('searchLoader').classList.remove('hidden');
 
             try {
@@ -138,8 +141,10 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ query: query, top_k: 5 })
                 });
-                
+
                 const data = await response.json();
+                document.getElementById('searchTime').innerText = data.execution_time_seconds;
+                document.getElementById('searchTimer').classList.remove('hidden');
                 renderSearchResults(data.results);
             } catch (error) {
                 alert("Search failed. Ensure Uvicorn is running.");
