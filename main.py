@@ -2,8 +2,8 @@
 # FastAPI: the web framework that turns Python functions into HTTP endpoints.
 # Depends: FastAPI's dependency-injection helper. We use it to hand a fresh DB
 # session to each request handler without having to open/close it manually.
-from fastapi import FastAPI, Depends
-
+from fastapi import FastAPI, Depends, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 # Session is the SQLAlchemy ORM session type — think of it as a "conversation"
 # with the database. We only import it for type hinting here.
 from sqlalchemy.orm import Session
@@ -32,7 +32,7 @@ from opensearchpy import OpenSearch
 # created in load_wikiplots.py. It handles the "semantic" half of retrieval.
 from load_wikiplots import docsearch
 
-# Our SQLAlchemy ORM model for the plots table — holds the full plot text
+# Our SQLAlchemy ORM model for the books table — holds the full plot text
 # that's too big to stash inside OpenSearch metadata.
 from models import BookMetadata
 
@@ -62,11 +62,23 @@ from langchain_core.documents import Document
 # OpenSearch client class isn't a Pydantic-friendly type.
 from typing import List, Any
 
+import uuid
+
+from schemas import SearchQuery, BookCreate, BookResponse
+
 # Actually run the .env loader now, before anything reads os.environ.
 load_dotenv()
 
 # Create the FastAPI app instance. The title shows up in the /docs Swagger UI.
 app = FastAPI(title="Wikiplot API")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],   
+    allow_credentials=False,  
+    allow_methods=["*"],      
+    allow_headers=["*"],
+)
 
 # Instantiate the embedding model once at startup. `all-MiniLM-L6-v2` is a
 # small (~22M param) sentence-transformer — fast, 384-dim vectors, good
@@ -184,18 +196,10 @@ def health_check(db: Session = Depends(get_session)):
 
     return health_status
 
-# Pydantic schema for the /search POST body. FastAPI will:
-#   1. parse the incoming JSON,
-#   2. validate types (reject if `query` isn't a string),
-#   3. hand us a typed Python object.
-class SearchQuery(BaseModel):
-    query: str        # required — the user's natural-language search
-    top_k: int = 5    # optional — defaults to 5 if the client omits it
-
 # The main retrieval endpoint. POST because the body can be arbitrarily long
 # and we don't want it in the URL.
 @app.post("/search")
-def search_plots(request: SearchQuery, db: Session = Depends(get_session)):
+def search_books(request: SearchQuery, db: Session = Depends(get_session)):
     # Wall-clock start so we can report total latency back to the caller.
     start_time = time.time()
 
@@ -232,14 +236,34 @@ def search_plots(request: SearchQuery, db: Session = Depends(get_session)):
     # Dict comprehension: id -> plot, so we can O(1) look up the full plot
     # text while assembling the response below. str(book.id) because the
     # book_ids from the retriever are strings and we want the keys to match.
-    plots = {str(book.id): book.plot for book in db_results}
+    books = {str(book.id): book.plot for book in db_results}
 
     # Build the final response list in the same order the retriever returned.
-    final_payload = [{
-        "title": doc.metadata.get('title', 'Unknown Title'),
-        "snippet": f"{doc.page_content[:200]}...",
-        "full_plot_text": plots.get(str(doc.metadata.get('book_id')), "Text not found.")
-    } for doc in results]
+    final_payload = []
+    for doc in results:
+        # Extract the ID once and ensure it's a string
+        raw_id = doc.metadata.get('book_id')
+        book_id_str = str(raw_id) if raw_id else "N/A"
+        title = doc.metadata.get('title', 'Unknown Title')
+
+        # Pull the text from our Postgres map using the string ID.
+        # If the UUID is stale (OpenSearch and Postgres out of sync),
+        # fall back to a title-based lookup.
+        full_plot = books.get(book_id_str)
+        if not full_plot:
+            fallback = db.query(BookMetadata).filter(BookMetadata.title == title).first()
+            if fallback:
+                full_plot = fallback.plot
+                book_id_str = str(fallback.id)
+            else:
+                full_plot = doc.page_content
+
+        final_payload.append({
+            "id": book_id_str,
+            "title": title,
+            "snippet": f"{doc.page_content[:200]}...",
+            "full_plot_text": full_plot.strip()
+        })
 
     # Stop the timer and round to 2 decimal places — don't need microseconds.
     end_time = time.time()
@@ -252,3 +276,46 @@ def search_plots(request: SearchQuery, db: Session = Depends(get_session)):
         "execution_time_seconds": execution_time,
         "results": final_payload
     }
+
+@app.get("/books/search", response_model=List[BookResponse])
+def search_books_by_title(title: str, db: Session = Depends(get_session)):
+    search_pattern = f"%{title}%"
+    books = db.query(BookMetadata).filter(BookMetadata.title.ilike(search_pattern)).limit(10).all()
+    return books
+
+@app.post("/books", response_model=BookResponse)
+def create_book(book: BookCreate, db: Session = Depends(get_session)):
+    new_book = BookMetadata(title=book.title, plot=book.plot)
+    db.add(new_book)
+    db.commit()
+    db.refresh(new_book)
+    return new_book
+
+@app.get("/books/{book_id}", response_model=BookResponse)
+def get_book(book_id: str, db: Session = Depends(get_session)):
+    book = db.query(BookMetadata).filter(BookMetadata.id == book_id).first()
+    if not book:
+        raise HTTPException(status_code=404, detail="book not found")
+    return book
+
+@app.put("/books/{book_id}", response_model=BookResponse)
+def update_book(book_id: str, book_data: BookCreate, db: Session = Depends(get_session)):
+    book = db.query(BookMetadata).filter(BookMetadata.id == book_id).first()
+    if not book:
+        raise HTTPException(status_code=404, detail="book not found")
+    
+    book.title = book_data.title
+    book.plot = book_data.plot
+    db.commit()
+    db.refresh(book)
+    return book
+
+@app.delete("/books/{book_id}")
+def delete_book(book_id: str, db: Session = Depends(get_session)):
+    book = db.query(BookMetadata).filter(BookMetadata.id == book_id).first()
+    if not book:
+        raise HTTPException(status_code=404, detail="book not found")
+    
+    db.delete(book)
+    db.commit()
+    return {"status": "success"}
