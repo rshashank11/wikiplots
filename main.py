@@ -4,6 +4,7 @@
 # session to each request handler without having to open/close it manually.
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 # Session is the SQLAlchemy ORM session type — think of it as a "conversation"
 # with the database. We only import it for type hinting here.
 from sqlalchemy.orm import Session
@@ -162,10 +163,10 @@ hybrid_retriever = EnsembleRetriever(
     weights=[0.5, 0.5]
 )
 
-# Root endpoint — just a "yes, the server is up".
+# Serve the frontend at the root URL.
 @app.get("/")
 def read_root():
-    return {"status": "online", "message": "sanity check"}
+    return FileResponse("app.html")
 
 # /health pings our two downstream dependencies so ops/monitoring can tell
 # whether the API itself is alive but something behind it is broken.
