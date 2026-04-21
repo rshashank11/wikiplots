@@ -83,12 +83,12 @@ import requests
 # Actually run the .env loader now, before anything reads os.environ.
 load_dotenv()
 
-# Pull the OpenSearch URL out of the env. `getenv` returns None if missing,
+# Pull the OpenSearch URL out of the env. returns None if missing,
 # which is fine here because OpenSearchVectorSearch will blow up loudly
 # downstream if the URL is bad -- no silent mis-configuration.
-OPENSEARCH_URL=os.getenv("OPENSEARCH_URL")
+OPENSEARCH_URL=os.environ.get("OPENSEARCH_URL")
 
-HF_TOKEN = os.getenv("HF_TOKEN")
+HF_TOKEN = os.environ.get("HF_TOKEN")
 
 # Create the FastAPI app instance. The title shows up in the /docs Swagger UI.
 app = FastAPI(title="Wikiplot API")
@@ -278,7 +278,7 @@ def parse_user_query(user_input: str) -> SearchPlan:
     # `.invoke()` runs the chain. We pass a dictionary matching the {input} variable.
     return chain.invoke({"input": user_input})
 
-JINA_API_KEY = os.getenv("JINA_API_KEY")
+JINA_API_KEY = os.environ.get("JINA_API_KEY")
 RERANK_API_URL = "https://api.jina.ai/v1/rerank"
 
 def rerank_results(query: str, documents: List[Document], top_n: int = 5) -> List[Document]:
