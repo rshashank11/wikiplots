@@ -6,79 +6,95 @@
     <title>Wikiplot AI</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        /* Smooth transition for AI answer appearance */
-        .fade-in { animation: fadeIn 0.5s ease-in-out; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        
-        details > summary { list-style: none; cursor: pointer; }
-        details > summary::-webkit-details-marker { display: none; }
         .spinner { border-top-color: #4f46e5; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .fade-in { animation: fadeIn 0.4s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
     </style>
 </head>
-<body class="bg-gray-50 min-h-screen font-sans text-gray-800">
+<body class="bg-gray-50 min-h-screen text-gray-900">
 
-    <nav class="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-50">
-        <div class="max-w-4xl mx-auto px-4 flex space-x-8">
-            <button onclick="switchTab('search')" id="tab-search" class="py-4 px-2 border-b-2 border-indigo-600 font-bold text-indigo-600">Search</button>
-            <button onclick="switchTab('admin')" id="tab-admin" class="py-4 px-2 border-b-2 border-transparent font-medium text-gray-500 hover:text-gray-800">CRUD</button>
+    <nav class="bg-white border-b border-gray-200 sticky top-0 z-50">
+        <div class="max-w-4xl mx-auto px-4 flex space-x-6">
+            <button onclick="switchTab('search')" id="tab-search" class="py-4 border-b-2 border-indigo-600 font-bold text-indigo-600 transition-all">AI Search</button>
+            <button onclick="switchTab('admin')" id="tab-admin" class="py-4 border-b-2 border-transparent text-gray-500 hover:text-indigo-600 transition-all">Manage Data</button>
         </div>
     </nav>
 
-    <div class="max-w-4xl mx-auto px-4 py-8">
-
-        <div id="view-search" class="block space-y-6">
-            <div class="relative group">
+    <main class="max-w-4xl mx-auto px-4 py-10">
+        
+        <div id="view-search" class="space-y-6">
+            <div class="relative">
                 <input type="text" id="searchInput" 
-                    class="w-full text-xl pl-6 pr-32 py-5 rounded-2xl border-2 border-gray-200 focus:border-indigo-500 focus:outline-none shadow-xl transition-all" 
-                    placeholder="Ask about a plot, character, or relationship..." 
+                    class="w-full text-xl p-6 pr-36 rounded-2xl border-2 border-gray-100 shadow-xl focus:border-indigo-500 outline-none transition-all" 
+                    placeholder="Search characters, plots, or relationships..."
                     onkeypress="if(event.key === 'Enter') executeSearch()">
-                <button onclick="executeSearch()" class="absolute right-3 top-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-6 py-3 rounded-xl shadow-lg transition-all">
-                    Ask AI
+                <button onclick="executeSearch()" class="absolute right-3 top-3 bg-indigo-600 text-white font-bold px-8 py-4 rounded-xl shadow-lg hover:bg-indigo-700 transition-all">
+                    Ask
                 </button>
             </div>
 
-            <div id="searchLoader" class="hidden flex flex-col items-center justify-center py-20">
+            <div id="searchLoader" class="hidden flex flex-col items-center py-20">
                 <div class="spinner rounded-full border-4 border-t-4 border-gray-200 h-12 w-12 mb-4"></div>
-                <p class="text-indigo-600 font-bold animate-pulse">Consulting the archives...</p>
+                <p class="text-indigo-600 font-medium animate-pulse">Thinking...</p>
             </div>
 
-            <div id="aiAnswerSection" class="hidden fade-in space-y-4">
-                <div class="bg-white rounded-3xl shadow-xl border border-gray-100 overflow-hidden">
-                    <div class="bg-gradient-to-r from-indigo-600 to-purple-600 px-6 py-3 flex justify-between items-center">
-                        <span class="text-white text-xs font-bold uppercase tracking-widest">AI Response</span>
-                        <span id="searchTime" class="text-indigo-100 text-xs"></span>
+            <div id="resultArea" class="hidden fade-in space-y-6">
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="bg-indigo-50 p-4 rounded-xl border border-indigo-100">
+                        <p class="text-[10px] uppercase font-bold text-indigo-400 mb-1 tracking-widest">Original Query</p>
+                        <p id="originalQueryDisplay" class="text-sm font-medium text-indigo-900 italic"></p>
                     </div>
-                    <div class="p-8">
-                        <div id="aiAnswerBody" class="text-gray-800 leading-relaxed text-lg prose max-w-none">
-                            </div>
+                    <div class="bg-purple-50 p-4 rounded-xl border border-purple-100">
+                        <p class="text-[10px] uppercase font-bold text-purple-400 mb-1 tracking-widest">Optimized Keywords</p>
+                        <p id="searchQueryDisplay" class="text-sm font-medium text-purple-900 font-mono"></p>
                     </div>
                 </div>
 
-                <div id="sourcesContainer" class="space-y-3">
-                    <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest ml-2">Sources Found</h3>
-                    <div id="sourcesList" class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        </div>
+                <div class="bg-white rounded-3xl shadow-sm border border-gray-200 overflow-hidden">
+                    <div class="bg-gray-50 px-6 py-3 border-b border-gray-100 flex justify-between items-center">
+                        <span class="text-xs font-bold text-gray-400 uppercase tracking-widest">AI Synthesis</span>
+                        <span id="execTime" class="text-xs text-indigo-500 font-bold bg-indigo-50 px-2 py-1 rounded"></span>
+                    </div>
+                    <div id="answerText" class="p-8 text-lg leading-relaxed text-gray-800 whitespace-pre-wrap"></div>
+                </div>
+
+                <div id="sourceSection">
+                    <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3 ml-2">Cited Sources</h3>
+                    <div id="sourceGrid" class="grid grid-cols-1 sm:grid-cols-2 gap-3"></div>
                 </div>
             </div>
         </div>
 
         <div id="view-admin" class="hidden space-y-8">
-            <div class="bg-white p-8 rounded-3xl shadow-sm border border-gray-200">
-                <h2 id="formTitle" class="text-2xl font-bold mb-6">Database Management</h2>
+            <div class="bg-white p-8 rounded-3xl border border-gray-200 shadow-sm">
+                <h2 id="formTitle" class="text-xl font-bold mb-6">Create New Entry</h2>
                 <input type="hidden" id="adminBookId">
                 <div class="space-y-4">
-                    <input type="text" id="adminTitle" placeholder="Title" class="w-full p-4 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none">
-                    <textarea id="adminBookText" rows="6" placeholder="Full Plot Text" class="w-full p-4 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none"></textarea>
+                    <input type="text" id="adminTitle" placeholder="Title (Movie, Book, etc.)" class="w-full p-4 rounded-xl bg-gray-50 border-none outline-none focus:ring-2 focus:ring-indigo-500">
+                    <textarea id="adminBookText" rows="6" placeholder="Full Plot Description" class="w-full p-4 rounded-xl bg-gray-50 border-none outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
                     <div class="flex space-x-3">
-                        <button onclick="saveBook()" class="bg-green-600 text-white font-bold py-3 px-8 rounded-xl">Save Entry</button>
-                        <button onclick="resetAdminForm()" id="cancelEditBtn" class="hidden bg-gray-100 text-gray-600 font-bold py-3 px-8 rounded-xl">Cancel</button>
-                        <button onclick="deleteBook()" id="deleteBtn" class="hidden bg-red-500 text-white font-bold py-3 px-8 rounded-xl ml-auto">Delete</button>
+                        <button onclick="saveBook()" class="bg-indigo-600 text-white font-bold py-3 px-8 rounded-xl shadow-md hover:bg-indigo-700 transition-all">Save</button>
+                        <button onclick="resetAdminForm()" id="cancelEditBtn" class="hidden bg-gray-100 text-gray-500 font-bold py-3 px-8 rounded-xl">Cancel</button>
+                        <button onclick="deleteBook()" id="deleteBtn" class="hidden bg-red-50 text-red-600 font-bold py-3 px-8 rounded-xl ml-auto">Delete</button>
                     </div>
                 </div>
             </div>
+
+            <div class="bg-white p-8 rounded-3xl border border-gray-200 shadow-sm">
+                <h2 class="text-lg font-bold mb-4">Database Search</h2>
+                <div class="flex space-x-3 mb-6">
+                    <input type="text" id="adminSearchInput" class="w-full p-4 rounded-xl bg-gray-50 border-none outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Search title to edit...">
+                    <button onclick="executeAdminSearch()" class="bg-gray-800 text-white font-bold px-6 py-4 rounded-xl">Find</button>
+                </div>
+                <div id="adminLoader" class="hidden flex justify-center py-6">
+                    <div class="spinner rounded-full border-4 border-t-4 border-gray-200 h-8 w-8"></div>
+                </div>
+                <div id="adminSearchResults" class="space-y-2"></div>
+            </div>
         </div>
-    </div>
+    </main>
 
     <script>
         const API_URL = window.location.origin;
@@ -86,19 +102,17 @@
         function switchTab(tab) {
             document.getElementById('view-search').classList.toggle('hidden', tab !== 'search');
             document.getElementById('view-admin').classList.toggle('hidden', tab !== 'admin');
-            document.getElementById('tab-search').className = tab === 'search' ? "py-4 px-2 border-b-2 border-indigo-600 font-bold text-indigo-600" : "py-4 px-2 border-b-2 border-transparent font-medium text-gray-500 hover:text-gray-800";
-            document.getElementById('tab-admin').className = tab === 'admin' ? "py-4 px-2 border-b-2 border-indigo-600 font-bold text-indigo-600" : "py-4 px-2 border-b-2 border-transparent font-medium text-gray-500 hover:text-gray-800";
+            document.getElementById('tab-search').className = tab === 'search' ? "py-4 border-b-2 border-indigo-600 font-bold text-indigo-600" : "py-4 border-b-2 border-transparent text-gray-500 hover:text-indigo-600";
+            document.getElementById('tab-admin').className = tab === 'admin' ? "py-4 border-b-2 border-indigo-600 font-bold text-indigo-600" : "py-4 border-b-2 border-transparent text-gray-500 hover:text-indigo-600";
         }
 
         async function executeSearch() {
-            const query = document.getElementById('searchInput').value.trim();
+            const queryInput = document.getElementById('searchInput');
+            const query = queryInput.value.trim();
             if (!query) return;
 
-            const loader = document.getElementById('searchLoader');
-            const answerSection = document.getElementById('aiAnswerSection');
-            
-            answerSection.classList.add('hidden');
-            loader.classList.remove('hidden');
+            document.getElementById('resultArea').classList.add('hidden');
+            document.getElementById('searchLoader').classList.remove('hidden');
 
             try {
                 const response = await fetch(`${API_URL}/search`, {
@@ -108,45 +122,137 @@
                 });
 
                 const data = await response.json();
-                renderAIResponse(data);
-            } catch (error) {
-                alert("Connection lost. Ensure the API is running.");
+                renderResults(data);
+            } catch (err) {
+                alert("Search request failed. Ensure the server is online.");
+            } finally {
+                document.getElementById('searchLoader').classList.add('hidden');
+            }
+        }
+
+        function renderResults(data) {
+            // Set text content
+            document.getElementById('answerText').innerText = data.answer || "No synthesis available.";
+            document.getElementById('execTime').innerText = `${data.execution_time_seconds}s`;
+            
+            // Set query transparency
+            document.getElementById('originalQueryDisplay').innerText = data.user_query || "N/A";
+            document.getElementById('searchQueryDisplay').innerText = data.search_query || "N/A";
+
+            // Render source cards
+            const grid = document.getElementById('sourceGrid');
+            grid.innerHTML = '';
+
+            if (data.results && data.results.length > 0) {
+                data.results.forEach((item, i) => {
+                    const card = document.createElement('div');
+                    card.className = "p-4 bg-white rounded-xl border border-gray-100 shadow-sm hover:border-indigo-200 transition-all cursor-help";
+                    card.innerHTML = `
+                        <div class="text-[10px] uppercase font-bold text-indigo-500 mb-1">Source ${i+1}</div>
+                        <div class="font-bold text-sm truncate text-gray-800">${item.title}</div>
+                    `;
+                    grid.appendChild(card);
+                });
+            } else {
+                grid.innerHTML = '<p class="text-gray-400 text-sm ml-2 italic">No sources cited.</p>';
+            }
+
+            document.getElementById('resultArea').classList.remove('hidden');
+        }
+
+        // --- ADMIN / CRUD LOGIC ---
+
+        async function executeAdminSearch() {
+            const query = document.getElementById('adminSearchInput').value.trim();
+            const resultsContainer = document.getElementById('adminSearchResults');
+            const loader = document.getElementById('adminLoader');
+            
+            resultsContainer.innerHTML = '';
+            loader.classList.remove('hidden');
+
+            try {
+                const response = await fetch(`${API_URL}/books/search?title=${encodeURIComponent(query)}`);
+                const data = await response.json();
+                
+                if (data.length === 0) {
+                    resultsContainer.innerHTML = '<p class="text-gray-500 text-sm p-4">No entries found.</p>';
+                }
+
+                data.forEach(book => {
+                    const btn = document.createElement('button');
+                    btn.className = "w-full text-left p-4 bg-gray-50 hover:bg-indigo-50 rounded-xl border border-gray-100 transition-colors flex justify-between items-center mb-2";
+                    btn.innerHTML = `<span class="font-bold text-gray-700">${book.title}</span><span class="text-xs text-indigo-400 uppercase font-bold">Edit</span>`;
+                    btn.onclick = () => loadBookIntoForm(book.id, book.title, book.plot);
+                    resultsContainer.appendChild(btn);
+                });
+            } catch (err) {
+                alert("Database lookup failed.");
             } finally {
                 loader.classList.add('hidden');
             }
         }
 
-        function renderAIResponse(data) {
-            const answerBody = document.getElementById('aiAnswerBody');
-            const sourcesList = document.getElementById('sourcesList');
-            const timeSpan = document.getElementById('searchTime');
-
-            // 1. Update Header Timing
-            timeSpan.innerText = `Computed in ${data.execution_time}s`;
-
-            // 2. Inject AI Answer (handles multi-line responses)
-            answerBody.innerHTML = data.answer.replace(/\n/g, '<br>');
-
-            // 3. Inject Sources (The snippets/titles)
-            sourcesList.innerHTML = '';
-            data.search_plan.results_used?.forEach((res, index) => {
-                // We show small source cards below the answer
-                const card = document.createElement('div');
-                card.className = "p-4 bg-white rounded-xl border border-gray-200 shadow-sm hover:border-indigo-300 transition-all cursor-pointer";
-                card.innerHTML = `
-                    <p class="text-xs font-bold text-indigo-600 mb-1">Source ${index + 1}</p>
-                    <h4 class="font-bold text-sm text-gray-800 truncate">${res.title}</h4>
-                `;
-                // If user clicks a source, we could scroll them to a full plot view
-                sourcesList.appendChild(card);
-            });
-
-            document.getElementById('aiAnswerSection').classList.remove('hidden');
+        function loadBookIntoForm(id, title, plot) {
+            document.getElementById('adminBookId').value = id;
+            document.getElementById('adminTitle').value = title;
+            document.getElementById('adminBookText').value = plot;
+            document.getElementById('formTitle').innerText = `Editing: ${title}`;
+            document.getElementById('cancelEditBtn').classList.remove('hidden');
+            document.getElementById('deleteBtn').classList.remove('hidden');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
         }
 
-        // --- Standard Admin Functions (CRUD) remain mostly same ---
-        async function saveBook() { /* logic from previous turn */ }
-        function resetAdminForm() { /* logic from previous turn */ }
+        function resetAdminForm() {
+            document.getElementById('adminBookId').value = '';
+            document.getElementById('adminTitle').value = '';
+            document.getElementById('adminBookText').value = '';
+            document.getElementById('formTitle').innerText = "Create New Entry";
+            document.getElementById('cancelEditBtn').classList.add('hidden');
+            document.getElementById('deleteBtn').classList.add('hidden');
+        }
+
+        async function saveBook() {
+            const id = document.getElementById('adminBookId').value;
+            const title = document.getElementById('adminTitle').value;
+            const plot = document.getElementById('adminBookText').value;
+
+            if (!title || !plot) return alert("Title and Plot are required.");
+
+            const method = id ? 'PUT' : 'POST';
+            const url = id ? `${API_URL}/books/${id}` : `${API_URL}/books`;
+
+            try {
+                const response = await fetch(url, {
+                    method: method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title: title, plot: plot })
+                });
+
+                if (response.ok) {
+                    alert(id ? "Entry updated!" : "New entry created!");
+                    resetAdminForm();
+                    document.getElementById('adminSearchResults').innerHTML = '';
+                }
+            } catch (err) {
+                alert("Error saving to database.");
+            }
+        }
+
+        async function deleteBook() {
+            const id = document.getElementById('adminBookId').value;
+            if (!id || !confirm("Permanently delete this entry?")) return;
+
+            try {
+                const response = await fetch(`${API_URL}/books/${id}`, { method: 'DELETE' });
+                if (response.ok) {
+                    alert("Deleted successfully.");
+                    resetAdminForm();
+                    document.getElementById('adminSearchResults').innerHTML = '';
+                }
+            } catch (err) {
+                alert("Error deleting from database.");
+            }
+        }
     </script>
 </body>
 </html>

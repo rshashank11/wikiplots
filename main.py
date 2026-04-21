@@ -459,6 +459,7 @@ def search_books(request: SearchQuery, db: Session = Depends(get_session)):
     execution_time = round(time.time() - start_time, 2)
 
     return {
+        "answer": answer,
         "user_query": request.query,
         "search_query": plan.search_query, # Helpful to see what was actually searched
         "execution_time_seconds": execution_time,
