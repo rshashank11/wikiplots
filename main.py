@@ -343,6 +343,12 @@ def rerank_results(query: str, documents: List[Document], top_n: int = 5) -> Lis
     except Exception as e:
         print(f"Rerank Exception: {str(e)}")
         return documents[:top_n]
+    
+final_llm = ChatOpenAI(
+    model='gpt-4o', 
+    api_key=os.environ.get("OPENAI_API_KEY"),
+    temperature=0.3 # A little bit of 'warmth' for a more natural writing style
+)
 
 def generate_final_answer(query: str, plan: SearchPlan, contexts: List[dict]) -> str:
     """
