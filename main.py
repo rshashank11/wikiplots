@@ -283,56 +283,66 @@ RERANK_API_URL = "https://api.jina.ai/v1/rerank"
 
 def rerank_results(query: str, documents: List[Document], top_n: int = 5) -> List[Document]:
     """
-    Sends retrieved documents to the official Jina AI API.
-    The Jina v3 model uses 'Listwise' attention to compare all docs at once.
+    Refines candidate chunks using the official Jina AI API.
+    Fixes the 'discriminator model' validation error.
     """
     if not documents:
+        print("Rerank Warning: No documents provided to rerank.")
         return []
 
-    # Authorization header using your Jina key
+    # Ensure the key is loaded
+    api_key = os.environ.get("JINA_API_KEY")
+    if not api_key:
+        print("Rerank Error: JINA_API_KEY is missing from environment.")
+        return documents[:top_n]
+
     headers = {
-        "Authorization": f"Bearer {JINA_API_KEY}",
+        "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json"
     }
     
-    # We extract the text from each Document object for the API payload.
+    # Extract raw text for the API
     doc_texts = [doc.page_content for doc in documents]
     
-    # Payload format for Jina v3: it needs the query and the list of texts.
+    # --- CRITICAL FIX ---
+    # Jina AI requires 'model' at the ROOT level, not inside an 'inputs' key.
     payload = {
-        "inputs": {
-            "query": query,
-            "documents": doc_texts
-        }
+        "model": "jina-reranker-v3",  # This is the 'discriminator' the error is looking for
+        "query": query,
+        "documents": doc_texts,
+        "top_n": top_n
     }
 
-    # POST request to Hugging Face.
-    response = requests.post(RERANK_API_URL, headers=headers, json=payload)
-    
-    if response.status_code != 200:
-        # Fallback logic: If the API is down or rate-limited, we don't crash.
-        # We just return the first top_n results from the original search.
-        print(f"Rerank API Error: {response.text}")
-        return documents[:top_n]
+    # Debug: This will show up in your Render logs so you can verify the body
+    print(f"DEBUG: Sending Rerank Payload for query: {query[:30]}...")
 
-    # The API returns a list of rankings containing the original index and a score.
-    # Sorted by relevance automatically by the Jina API.
-    scores = response.json()
-    
-    # We use the 'index' returned by the API to grab the original Document objects.
-    # This preserves the metadata (like book_id) needed for the later Postgres step.
-    final_docs = []
-    for item in scores[:top_n]:
-        idx = item['index']
-        final_docs.append(documents[idx])
+    try:
+        # Use json=payload to ensure requests handles the JSON serialization and headers correctly
+        response = requests.post(
+            "https://api.jina.ai/v1/rerank", 
+            headers=headers, 
+            json=payload,
+            timeout=10 # Add a timeout to prevent hanging
+        )
         
-    return final_docs
+        # If this fails, it will now print the exact server error in your logs
+        if response.status_code != 200:
+            print(f"Rerank API Server Error: {response.status_code} - {response.text}")
+            return documents[:top_n]
+        
+        results_data = response.json()
+        
+        # Jina returns: {"results": [{"index": 0, "relevance_score": 0.9}, ...]}
+        final_docs = []
+        for item in results_data.get("results", []):
+            idx = item['index']
+            final_docs.append(documents[idx])
+            
+        return final_docs
 
-final_llm = ChatOpenAI(
-    model='gpt-4o', 
-    api_key=os.environ.get("OPENAI_API_KEY"),
-    temperature=0.3 
-)
+    except Exception as e:
+        print(f"Rerank Exception: {str(e)}")
+        return documents[:top_n]
 
 def generate_final_answer(query: str, plan: SearchPlan, contexts: List[dict]) -> str:
     """
