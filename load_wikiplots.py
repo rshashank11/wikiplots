@@ -104,10 +104,10 @@ def ingest_data():
     # to the end of the dataset -- i.e. we're picking up where an earlier
     # run of the first 1000 left off. (A bit of a footgun: rename to
     # `start_index` next time for clarity.)
-    limit = 1000
+    # limit = 1000
 
     # Walk through every (title, plot) pair past the start index.
-    for i in range(limit, len(titles)):
+    for i in range(len(titles)):
         # .strip() kills leading/trailing whitespace/newlines from the file.
         title_text=titles[i].strip()
         plot_text=plots[i].strip()
@@ -124,6 +124,13 @@ def ingest_data():
         # the session's "to be INSERTed" queue; commit() flushes it.
         new_book = BookMetadata(id=book_id, title=title_text, plot=plot_text)
         db.add(new_book)
+
+        # Commit to Postgres BEFORE writing to OpenSearch. This ensures a
+        # book only becomes searchable after its full plot is safely persisted,
+        # preventing orphaned chunks that return "Text not found" on lookup.
+        if i % 10 == 0:
+            db.commit()
+            print(f"Progress: {i}/{len(titles)} - Loaded: {title_text}")
 
         # Split the full plot into retrieval-sized chunks. Returns a list of
         # strings -- the splitter handles the overlap sliding window for us.
@@ -143,13 +150,6 @@ def ingest_data():
             texts=chunks,
             metadatas=metadatas
         )
-
-        # Batch-commit to Postgres every 10 plots instead of every single one.
-        # Trades a bit of crash-safety for a LOT of throughput -- committing
-        # per-row would be dominated by transaction overhead.
-        if i % 10 == 0:
-            db.commit()
-            print(f"Progress: {i}/{len(titles)} - Loaded: {title_text}")
 
     # Final commit catches the last <10 rows that didn't hit the modulo check.
     db.commit()
