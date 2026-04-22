@@ -5,6 +5,7 @@
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+
 # Session is the SQLAlchemy ORM session type — think of it as a "conversation"
 # with the database. We only import it for type hinting here.
 from sqlalchemy.orm import Session
@@ -171,7 +172,7 @@ def rerank_results(query: str, documents: List[Document], top_n: int = 5) -> Lis
         "model": "jina-reranker-v3",
         "query": query,
         "documents": [doc.page_content for doc in documents],
-        "top_n": top_n * 2 # We pull extra so we have enough unique items after deduplication
+        "top_n": top_n * 2 # Extra padding for deduplication
     }
 
     try:
@@ -217,18 +218,27 @@ def search_books(request: SearchQuery, db: Session = Depends(get_session)):
     # 1. Parsing: Turn natural language into structured search parameters.
     plan = parse_user_query(request.query)
     
-    # 2. Dynamic Filtering: Apply 'Hard Fence' metadata filters if possible.
+    # 2. Dynamic Filtering: Setup the 'Hard Fence' metadata filter.
     os_filter = {"match_phrase": {"metadata.title": plan.subject}} if plan.is_specific_entity and plan.subject else None
 
-    # 3. Retrieval: Pull top 20 candidate chunks for the Reranker to look at.
+    # 3. Retrieval: Pull candidate chunks from OpenSearch.
     keyword_retriever.k = 20
-    vector_retriever.search_kwargs = {"k": 20, "filter": os_filter}
+    
+    # --- CRITICAL FIX ---
+    # We only include the 'filter' key if it exists. 
+    # OpenSearch kNN will crash with 'VALUE_NULL' if we pass filter: None.
+    v_search_kwargs = {"k": 20}
+    if os_filter:
+        v_search_kwargs["filter"] = os_filter
+    
+    vector_retriever.search_kwargs = v_search_kwargs
+    
     candidates = hybrid_retriever.invoke(plan.search_query)
 
-    # 4. Rerank: Select the absolute top chunks.
+    # 4. Rerank: Order the chunks by true semantic relevance.
     best_docs = rerank_results(plan.search_query, candidates, top_n=request.top_k)
 
-    # 5. Deduplication & Hydration: Ensure we only fetch unique media items.
+    # 5. Deduplication & Hydration: Ensure unique results and fetch full text.
     seen_ids = set()
     unique_docs = []
     
@@ -237,11 +247,9 @@ def search_books(request: SearchQuery, db: Session = Depends(get_session)):
         if bid not in seen_ids:
             seen_ids.add(bid)
             unique_docs.append(doc)
-        # Stop once we have reached the requested top_k unique items
         if len(unique_docs) >= request.top_k:
             break
 
-    # Fetch full plots from Postgres for our unique winners.
     book_ids = [doc.metadata.get('book_id') for doc in unique_docs if doc.metadata.get('book_id')]
     db_results = db.query(BookMetadata).filter(BookMetadata.id.in_(book_ids)).all()
     plot_map = {str(b.id): b.plot for b in db_results}
@@ -250,8 +258,8 @@ def search_books(request: SearchQuery, db: Session = Depends(get_session)):
     for doc in unique_docs:
         bid = str(doc.metadata.get('book_id'))
         title = doc.metadata.get('title', 'Unknown Title')
-        
         full_plot = plot_map.get(bid)
+        
         if not full_plot:
             fallback = db.query(BookMetadata).filter(BookMetadata.title == title).first()
             full_plot = fallback.plot if fallback else doc.page_content
@@ -262,7 +270,7 @@ def search_books(request: SearchQuery, db: Session = Depends(get_session)):
             "snippet": doc.page_content
         })
 
-    # 6. Generation: Synthesize cited answer using the deduplicated Full Plots.
+    # 6. Generation: Synthesis step.
     answer = generate_final_answer(request.query, plan, final_payload)
     
     execution_time = round(time.time() - start_time, 2)
@@ -274,3 +282,5 @@ def search_books(request: SearchQuery, db: Session = Depends(get_session)):
         "execution_time_seconds": execution_time,
         "results": final_payload
     }
+
+# Standard CRUD omitted for space...
